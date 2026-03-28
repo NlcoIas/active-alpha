@@ -212,11 +212,11 @@ class ISharesClient:
         for row in reader:
             holding_ticker = ""
             if col_ticker:
-                holding_ticker = row.get(col_ticker, "").strip()
+                holding_ticker = (row.get(col_ticker) or "").strip()
 
             holding_name = ""
             if col_name:
-                holding_name = row.get(col_name, "").strip()
+                holding_name = (row.get(col_name) or "").strip()
 
             # Skip empty rows, footer metadata, or rows without identifiers
             if not holding_ticker and not holding_name:

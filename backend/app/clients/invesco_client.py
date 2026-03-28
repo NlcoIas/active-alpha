@@ -90,7 +90,13 @@ class InvescoClient:
         )
 
     def supports(self, ticker: str) -> bool:
-        """Check if this provider can fetch holdings for this ticker."""
+        """Check if this provider can fetch holdings for this ticker.
+
+        NOTE: Invesco changed their website in early 2026. The download URL
+        now redirects to the homepage. Disabled until a working URL is found.
+        """
+        return False  # TODO: re-enable when Invesco URL is fixed
+        # Original check:
         return ticker.upper() in INVESCO_TICKERS
 
     async def fetch_holdings(self, ticker: str) -> list[dict[str, Any]]:

@@ -125,46 +125,27 @@ async def get_pipeline_status(
 )
 async def trigger_pipeline_run(
     body: PipelineTriggerRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> PipelineRunResponse:
     """Manually trigger a pipeline run (admin only, requires X-API-Key header).
 
-    Creates a pipeline_run record with status 'pending' and returns it.
-    The actual pipeline execution is handled by the scheduler/task system.
+    Runs the full pipeline synchronously and returns the completed result.
     """
-    now = datetime.now(timezone.utc)
+    from app.database import SessionLocal
+    from app.dependencies import get_aggregator
+    from app.services.pipeline_orchestrator import PipelineOrchestrator
 
-    run = PipelineRun(
-        started_at=now,
-        status="pending",
-        trigger_type="manual",
-        target_date=date.today(),
-        funds_attempted=0,
-        funds_succeeded=0,
-        funds_failed=0,
-        holdings_rows_inserted=0,
-        deviations_rows_inserted=0,
-        api_calls_made=0,
-    )
-
-    # Store trigger config in error_log field as metadata (reusing JSONB column)
-    if body.fund_tickers or body.force_refetch:
-        run.error_log = {
-            "trigger_config": {
-                "fund_tickers": body.fund_tickers,
-                "force_refetch": body.force_refetch,
-            }
-        }
-
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
+    aggregator = get_aggregator()
+    orchestrator = PipelineOrchestrator(SessionLocal, aggregator)
 
     logger.info(
-        "Pipeline run triggered manually: id=%s, tickers=%s, force=%s",
-        run.id,
+        "Pipeline run triggered manually: tickers=%s, force=%s",
         body.fund_tickers,
         body.force_refetch,
+    )
+
+    run = await orchestrator.run_daily_pipeline(
+        target_date=None,
+        trigger_type="manual",
     )
 
     return _run_to_response(run)

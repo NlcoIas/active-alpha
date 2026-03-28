@@ -210,14 +210,8 @@ class SSGAClient:
             if col_weight is not None and col_weight < len(row_values):
                 weight_raw = _safe_float(row_values[col_weight])
 
-            # SSGA weights are decimals (0.0724 = 7.24%) — convert to percentage
-            weight_pct: float | None = None
-            if weight_raw is not None:
-                if abs(weight_raw) <= 1.0:
-                    weight_pct = weight_raw * 100.0
-                else:
-                    # Already in percentage form
-                    weight_pct = weight_raw
+            # SSGA weights are already in percentage points (7.5 = 7.5%)
+            weight_pct = weight_raw
 
             shares: float | None = None
             if col_shares is not None and col_shares < len(row_values):

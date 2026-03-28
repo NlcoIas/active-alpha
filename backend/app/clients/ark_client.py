@@ -128,8 +128,8 @@ class ARKClient:
         holdings: list[dict[str, Any]] = []
 
         for row in reader:
-            holding_ticker = row.get(col_ticker, "").strip() if col_ticker else ""
-            holding_name = row.get(col_name, "").strip() if col_name else ""
+            holding_ticker = (row.get(col_ticker) or "").strip() if col_ticker else ""
+            holding_name = (row.get(col_name) or "").strip() if col_name else ""
 
             # Skip empty rows or cash positions without a ticker
             if not holding_ticker and not holding_name:
