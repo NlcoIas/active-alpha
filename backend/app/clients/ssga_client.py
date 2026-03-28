@@ -22,16 +22,40 @@ SSGA_URL_TEMPLATE = (
 SSGA_TICKERS: set[str] = {
     # S&P 500 family
     "SPY", "SPYG", "SPYV", "SPYD",
-    # Select Sector SPDRs
+    # Select Sector SPDRs (all 11 sectors)
     "XLK", "XLF", "XLE", "XLV", "XLI", "XLU", "XLC", "XLRE", "XLB", "XLP", "XLY",
+    # S&P size/style
+    "SPTM", "SPMD", "SPSM",
+    # S&P 500 equal weight
+    "RSP",
     # International
     "SPDW", "SPEM",
-    # Fixed income
+    # Fixed income — core
     "BIL", "SPAB", "SPTS", "SPTL", "SPIB",
-    # Other popular
-    "GLD", "MDYG", "MDYV", "SLYG", "SLYV",
-    "SDY", "SPMD", "SPSM",
-    "KBE", "KRE", "XBI", "XHB", "XME", "XOP", "XRT",
+    # SPDR Portfolio series (low cost)
+    "SPLG", "SPTI", "SPIP", "SPHY", "SPBO",
+    # Precious metals
+    "GLD", "SLV",
+    # Broad market / Dow
+    "DIA", "MDY",
+    # Mid-cap style
+    "MDYG", "MDYV",
+    # Small-cap style
+    "SLYG", "SLYV",
+    # Dividend
+    "SDY",
+    # Industry SPDRs
+    "KBE", "KRE", "XBI", "XHB", "XME", "XOP", "XRT", "XAR", "XNTK",
+    # Additional SPDR sector/thematic
+    "XES", "XTL", "XTN", "XPH", "XSD", "XSW",
+    # SPDR international
+    "CWI", "GNR", "RWX", "WIP",
+    # SPDR fixed income — additional
+    "JNK", "SJNK", "FLRN", "SCPX",
+    # SPDR Bloomberg barclays fixed income
+    "BWX", "IBND", "TOTL",
+    # SPDR S&P regional/specialty
+    "EWRE", "ONEO", "ONEV",
 }
 
 # Column name aliases for flexible header matching

@@ -1,12 +1,11 @@
 """Invesco ETF holdings client.
 
-Fetches daily holdings CSVs from Invesco's public download endpoint.
+Fetches daily holdings from Invesco's dng-api.invesco.com JSON API.
+Uses CUSIP-based lookup (Invesco's new API requires CUSIP, not ticker).
 """
 
 from __future__ import annotations
 
-import csv
-import io
 import logging
 from typing import Any
 
@@ -14,103 +13,70 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-INVESCO_URL_TEMPLATE = (
-    "https://www.invesco.com/us/financial-products/etfs/holdings/main/holdings/0"
-    "?audienceType=Investor&action=download&ticker={ticker}"
+INVESCO_API_URL = (
+    "https://dng-api.invesco.com/cache/v1/accounts/en_US"
+    "/shareclasses/{cusip}/holdings/fund"
 )
 
-# Known Invesco ETF tickers — can be expanded as needed
-INVESCO_TICKERS: set[str] = {
+# Mapping of ticker → CUSIP for known Invesco ETFs
+INVESCO_CUSIPS: dict[str, str] = {
     # Nasdaq / S&P
-    "QQQ", "QQQM", "RSP", "SPLG",
+    "QQQ": "46090E103",
+    "QQQM": "46138G649",
+    "RSP": "46137V357",
     # Factor / Smart beta
-    "SPHB", "SPHQ", "SPHD", "PRFZ",
+    "SPHB": "46138E370",
+    "SPHQ": "46138E347",
+    "SPHD": "46138E362",
+    "PRFZ": "46137V753",
     # Equal weight sector
-    "RSPT", "RSPF", "RSPE",
+    "RSPT": "46137V845",
+    "RSPF": "46137V860",
+    "RSPE": "46137V878",
+    # S&P 500 GARP
+    "SPGP": "46137V266",
     # Other popular
-    "PGX", "BKLN", "PHB", "VCSH",
-    "DBA", "DBB", "DBC", "DBO",
-    "PDBC", "KBWB", "KBWP",
+    "PGX": "46138E818",
+    "BKLN": "46138G508",
+    "PDBC": "46138J101",
+    # Next Gen
+    "QGRW": "46090G108",
 }
-
-# Column name aliases for flexible header matching
-_COLUMN_ALIASES: dict[str, list[str]] = {
-    "ticker": ["holding ticker", "ticker", "symbol", "security ticker"],
-    "name": ["security name", "name", "description", "holding name", "security description"],
-    "weight_pct": ["weight", "weight (%)", "% of fund", "portfolio weight", "percentage"],
-    "shares": ["shares/par amount", "shares", "quantity", "shares held", "par amount"],
-    "market_value": ["marketvalue", "market value", "value", "market value ($)", "emv"],
-}
-
-
-def _find_column(headers: list[str], aliases: list[str]) -> str | None:
-    """Find the actual column name from a list of possible aliases."""
-    lower_headers = {h.lower().strip(): h for h in headers}
-    for alias in aliases:
-        if alias.lower() in lower_headers:
-            return lower_headers[alias.lower()]
-    return None
-
-
-def _safe_float(value: str | None) -> float | None:
-    """Parse a string to float, stripping commas and dollar signs."""
-    if value is None:
-        return None
-    cleaned = value.strip().replace(",", "").replace("$", "").replace("%", "")
-    if not cleaned or cleaned == "-" or cleaned.lower() in ("n/a", "na", "--"):
-        return None
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
-
-
-def _normalize_weight(value: float | None) -> float | None:
-    """Normalize weight to percentage points.
-
-    Invesco CSVs may provide weights as either:
-    - Percentage: 8.45 (meaning 8.45%)
-    - Decimal: 0.0845 (meaning 8.45%)
-
-    Heuristic: if all non-None weights are <= 1.0 and total is close to 1.0,
-    treat as decimal. Otherwise treat as percentage.
-    This function handles individual values; batch detection is done in _parse_csv.
-    """
-    return value
 
 
 class InvescoClient:
-    """Client for fetching Invesco ETF holdings from their public CSV endpoint."""
+    """Client for fetching Invesco ETF holdings from their JSON API."""
 
     def __init__(self, timeout: float = 30.0) -> None:
         self._http = httpx.AsyncClient(
             timeout=timeout,
             headers={"User-Agent": "ActiveAlpha/1.0 (ETF research tool)"},
-            follow_redirects=True,
         )
 
     def supports(self, ticker: str) -> bool:
-        """Check if this provider can fetch holdings for this ticker.
-
-        NOTE: Invesco changed their website in early 2026. The download URL
-        now redirects to the homepage. Disabled until a working URL is found.
-        """
-        return False  # TODO: re-enable when Invesco URL is fixed
-        # Original check:
-        return ticker.upper() in INVESCO_TICKERS
+        """Check if this provider can fetch holdings for this ticker."""
+        return ticker.upper() in INVESCO_CUSIPS
 
     async def fetch_holdings(self, ticker: str) -> list[dict[str, Any]]:
-        """Fetch holdings for an Invesco ETF.
+        """Fetch holdings for an Invesco ETF via JSON API.
 
         Returns list of dicts with keys: ticker, name, weight_pct, shares, market_value.
         Weight_pct is in percentage points (e.g. 7.24 means 7.24%).
         Returns empty list on any error.
         """
         ticker_upper = ticker.upper()
-        url = INVESCO_URL_TEMPLATE.format(ticker=ticker_upper)
+        cusip = INVESCO_CUSIPS.get(ticker_upper)
+        if cusip is None:
+            logger.warning("Invesco: no CUSIP for ticker %s", ticker_upper)
+            return []
+
+        url = INVESCO_API_URL.format(cusip=cusip)
 
         try:
-            response = await self._http.get(url)
+            response = await self._http.get(
+                url,
+                params={"idType": "cusip", "productType": "ETF"},
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             logger.error(
@@ -122,99 +88,45 @@ class InvescoClient:
             return []
         except httpx.HTTPError as exc:
             logger.error(
-                "Invesco: network error fetching %s holdings: %s", ticker_upper, exc
+                "Invesco: network error fetching %s holdings: %s",
+                ticker_upper,
+                exc,
             )
             return []
-
-        content_type = response.headers.get("content-type", "")
-        if "text" not in content_type and "csv" not in content_type:
-            logger.warning(
-                "Invesco: unexpected content-type %s for %s (may not be CSV)",
-                content_type,
-                ticker_upper,
-            )
 
         try:
-            return self._parse_csv(response.text, ticker_upper)
+            return self._parse_json(response.json(), ticker_upper)
         except Exception:
-            logger.exception("Invesco: failed to parse CSV for %s", ticker_upper)
+            logger.exception("Invesco: failed to parse JSON for %s", ticker_upper)
             return []
 
-    def _parse_csv(self, text: str, ticker: str) -> list[dict[str, Any]]:
-        """Parse Invesco CSV text into normalized holdings list."""
-        reader = csv.DictReader(io.StringIO(text))
-        if reader.fieldnames is None:
-            logger.warning("Invesco: empty CSV for %s", ticker)
+    def _parse_json(self, data: dict, ticker: str) -> list[dict[str, Any]]:
+        """Parse Invesco JSON API response into normalized holdings list."""
+        raw_holdings = data.get("holdings", [])
+        if not raw_holdings:
+            logger.warning("Invesco: no holdings in response for %s", ticker)
             return []
 
-        headers = list(reader.fieldnames)
-
-        col_ticker = _find_column(headers, _COLUMN_ALIASES["ticker"])
-        col_name = _find_column(headers, _COLUMN_ALIASES["name"])
-        col_weight = _find_column(headers, _COLUMN_ALIASES["weight_pct"])
-        col_shares = _find_column(headers, _COLUMN_ALIASES["shares"])
-        col_market_value = _find_column(headers, _COLUMN_ALIASES["market_value"])
-
-        if col_ticker is None and col_name is None:
-            logger.warning(
-                "Invesco: could not identify ticker or name columns for %s. Headers: %s",
-                ticker,
-                headers,
-            )
-            return []
-
-        # First pass: collect all raw weight values to detect format
-        raw_rows: list[dict[str, str]] = []
-        raw_weights: list[float] = []
-
-        for row in reader:
-            raw_rows.append(row)
-            if col_weight:
-                w = _safe_float(row.get(col_weight))
-                if w is not None and w > 0:
-                    raw_weights.append(w)
-
-        # Detect weight format: if total of all weights is close to 1.0 (or max < 1),
-        # they are decimal fractions; otherwise they are already percentages
-        is_decimal = False
-        if raw_weights:
-            total = sum(raw_weights)
-            max_weight = max(raw_weights)
-            # Decimal format: total near 1.0 or all values <= 1.0
-            if total <= 1.5 or max_weight <= 1.0:
-                is_decimal = True
-
-        # Second pass: build holdings with normalized weights
         holdings: list[dict[str, Any]] = []
 
-        for row in raw_rows:
-            holding_ticker = ""
-            if col_ticker:
-                holding_ticker = row.get(col_ticker, "").strip()
-
-            holding_name = ""
-            if col_name:
-                holding_name = row.get(col_name, "").strip()
+        for h in raw_holdings:
+            holding_ticker = (h.get("ticker") or "").strip()
+            holding_name = (h.get("issuerName") or "").strip()
 
             if not holding_ticker and not holding_name:
                 continue
 
-            weight = _safe_float(row.get(col_weight)) if col_weight else None
-            if weight is not None and is_decimal:
-                weight = weight * 100.0
+            weight_pct = h.get("percentageOfTotalNetAssets")
+            shares = h.get("units")
+            market_value = h.get("marketValueBase")
 
-            shares = _safe_float(row.get(col_shares)) if col_shares else None
-            market_value = _safe_float(row.get(col_market_value)) if col_market_value else None
-
-            holdings.append(
-                {
-                    "ticker": holding_ticker,
-                    "name": holding_name,
-                    "weight_pct": weight,
-                    "shares": shares,
-                    "market_value": market_value,
-                }
-            )
+            holdings.append({
+                "ticker": holding_ticker,
+                "name": holding_name,
+                "weight_pct": float(weight_pct) if weight_pct is not None else None,
+                "shares": float(shares) if shares is not None else None,
+                "market_value": float(market_value) if market_value is not None else None,
+            })
 
         logger.info("Invesco: parsed %d holdings for %s", len(holdings), ticker)
         return holdings

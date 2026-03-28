@@ -16,34 +16,87 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Mapping of ticker to (product_id, slug) — manually maintained for key ETFs
+# Product IDs sourced from ishares.com/us/products/{product_id}/{slug}
 ISHARES_PRODUCTS: dict[str, tuple[int, str]] = {
-    # S&P 500
+    # ── Core / Broad US equity ──────────────────────────────────────────────
     "IVV": (239726, "ishares-core-sp-500-etf"),
-    # Russell
+    "ITOT": (239724, "ishares-core-sp-total-us-stock-market-etf"),
+    "IJH": (239763, "ishares-core-sp-mid-cap-etf"),
+    "IJR": (239774, "ishares-core-sp-small-cap-etf"),
+    # ── Russell family ──────────────────────────────────────────────────────
     "IWM": (239710, "ishares-russell-2000-etf"),
     "IWB": (239707, "ishares-russell-1000-etf"),
     "IWF": (239706, "ishares-russell-1000-growth-etf"),
     "IWD": (239708, "ishares-russell-1000-value-etf"),
-    # Fixed income
-    "AGG": (239458, "ishares-core-us-aggregate-bond-etf"),
-    # International
-    "EFA": (239623, "ishares-msci-eafe-etf"),
-    "EEM": (239637, "ishares-msci-emerging-markets-etf"),
-    "IEFA": (244049, "ishares-core-msci-eafe-etf"),
-    "IEMG": (244050, "ishares-core-msci-emerging-markets-etf"),
-    # Factor
+    "IWR": (239718, "ishares-russell-midcap-etf"),
+    "IWS": (239719, "ishares-russell-midcap-value-etf"),
+    "IWP": (239717, "ishares-russell-midcap-growth-etf"),
+    "IWN": (239712, "ishares-russell-2000-value-etf"),
+    "IWO": (239711, "ishares-russell-2000-growth-etf"),
+    "IWV": (239714, "ishares-russell-3000-etf"),
+    # ── Factor / Smart Beta ─────────────────────────────────────────────────
     "QUAL": (256101, "ishares-msci-usa-quality-factor-etf"),
     "USMV": (239695, "ishares-msci-usa-min-vol-factor-etf"),
     "MTUM": (251614, "ishares-msci-usa-momentum-factor-etf"),
     "VLUE": (251616, "ishares-msci-usa-value-factor-etf"),
     "SIZE": (251615, "ishares-msci-usa-size-factor-etf"),
-    # Dividend
+    # ── Dividend ────────────────────────────────────────────────────────────
     "DGRO": (264623, "ishares-core-dividend-growth-etf"),
     "HDV": (239563, "ishares-core-high-dividend-etf"),
     "DVY": (239500, "ishares-select-dividend-etf"),
-    # Style
+    # ── Style ───────────────────────────────────────────────────────────────
     "IUSV": (239715, "ishares-core-sp-us-value-etf"),
     "IUSG": (239713, "ishares-core-sp-us-growth-etf"),
+    # ── US Sector ───────────────────────────────────────────────────────────
+    "IYW": (239522, "ishares-us-technology-etf"),
+    "IYH": (239511, "ishares-us-healthcare-etf"),
+    "IYF": (239508, "ishares-us-financials-etf"),
+    "IYE": (239507, "ishares-us-energy-etf"),
+    "IYR": (239520, "ishares-us-real-estate-etf"),
+    "IYC": (239506, "ishares-us-consumer-discretionary-etf"),
+    "IYK": (239513, "ishares-us-consumer-staples-etf"),
+    "IYJ": (239512, "ishares-us-industrials-etf"),
+    "IYZ": (239524, "ishares-us-telecommunications-etf"),
+    "IYM": (239515, "ishares-us-basic-materials-etf"),
+    # ── Thematic / Industry ─────────────────────────────────────────────────
+    "SOXX": (239705, "ishares-semiconductor-etf"),
+    "IBB": (239699, "ishares-biotechnology-etf"),
+    "IGV": (239700, "ishares-expanded-tech-software-sector-etf"),
+    "IHI": (239516, "ishares-us-medical-devices-etf"),
+    "ITA": (239502, "ishares-us-aerospace-defense-etf"),
+    # ── Fixed Income — US Treasury ──────────────────────────────────────────
+    "AGG": (239458, "ishares-core-us-aggregate-bond-etf"),
+    "TLT": (239454, "ishares-20-plus-year-treasury-bond-etf"),
+    "IEF": (239456, "ishares-7-10-year-treasury-bond-etf"),
+    "SHY": (239452, "ishares-1-3-year-treasury-bond-etf"),
+    "SHV": (239466, "ishares-short-treasury-bond-etf"),
+    "GOVT": (239468, "ishares-us-treasury-bond-etf"),
+    "TIP": (239467, "ishares-tips-bond-etf"),
+    # ── Fixed Income — Corporate / Credit ───────────────────────────────────
+    "LQD": (239566, "ishares-iboxx-investment-grade-corporate-bond-etf"),
+    "HYG": (239565, "ishares-iboxx-high-yield-corporate-bond-etf"),
+    "USIG": (239460, "ishares-broad-usd-investment-grade-corporate-bond-etf"),
+    "EMB": (239572, "ishares-jp-morgan-usd-emerging-markets-bond-etf"),
+    "MUB": (239766, "ishares-national-muni-bond-etf"),
+    # ── International — Developed ───────────────────────────────────────────
+    "EFA": (239623, "ishares-msci-eafe-etf"),
+    "IEFA": (244049, "ishares-core-msci-eafe-etf"),
+    "IXUS": (244048, "ishares-core-msci-total-international-stock-etf"),
+    "EWJ": (239665, "ishares-msci-japan-etf"),
+    "EWG": (239649, "ishares-msci-germany-etf"),
+    "EWU": (239690, "ishares-msci-united-kingdom-etf"),
+    "EWA": (239607, "ishares-msci-australia-etf"),
+    "EWC": (239615, "ishares-msci-canada-etf"),
+    "EWQ": (239678, "ishares-msci-france-etf"),
+    "EWL": (239667, "ishares-msci-switzerland-etf"),
+    # ── International — Emerging ────────────────────────────────────────────
+    "EEM": (239637, "ishares-msci-emerging-markets-etf"),
+    "IEMG": (244050, "ishares-core-msci-emerging-markets-etf"),
+    "EWZ": (239612, "ishares-msci-brazil-etf"),
+    "EWT": (239689, "ishares-msci-taiwan-etf"),
+    "EWY": (239681, "ishares-msci-south-korea-etf"),
+    "INDA": (239659, "ishares-msci-india-etf"),
+    "MCHI": (239619, "ishares-msci-china-etf"),
 }
 
 ISHARES_URL_TEMPLATE = (
