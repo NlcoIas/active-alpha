@@ -149,11 +149,11 @@ class BenchmarkService:
                     benchmark.id, benchmark.ticker, target_date,
                 )
                 counts[benchmark.ticker] = count
-            except Exception as exc:
+            except Exception:
                 logger.exception(
-                    "Unexpected error fetching benchmark %s", benchmark.ticker
+                    "Failed to fetch benchmark %s, skipping", benchmark.ticker
                 )
-                raise
+                counts[benchmark.ticker] = 0
 
         logger.info(
             "Fetched all benchmarks: %s",

@@ -162,6 +162,23 @@ class PipelineOrchestrator:
                     benchmark_counts = await benchmark_svc.fetch_all_benchmarks(target_date)
 
                 logger.info("Benchmark results: %s", benchmark_counts)
+                # Check if any benchmark actually got data
+                benchmarks_with_data = sum(1 for c in benchmark_counts.values() if c > 0)
+                if benchmarks_with_data == 0:
+                    benchmark_failed = True
+                    error_log.append({
+                        "stage": "benchmarks",
+                        "error": "No benchmark returned holdings data",
+                    })
+                else:
+                    logger.info("%d/%d benchmarks got data", benchmarks_with_data, len(benchmark_counts))
+                    for ticker, count in benchmark_counts.items():
+                        if count == 0:
+                            error_log.append({
+                                "stage": "benchmarks",
+                                "ticker": ticker,
+                                "error": f"No data for benchmark {ticker}",
+                            })
             except Exception as exc:
                 benchmark_failed = True
                 logger.error("Benchmark fetch failed: %s", exc)

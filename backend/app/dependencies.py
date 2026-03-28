@@ -34,9 +34,9 @@ def get_aggregator() -> HoldingsAggregator:
     """
     global _aggregator  # noqa: PLW0603
     if _aggregator is None:
-        # Only create FMP client if API key is configured
+        # Only create FMP client if a real API key is configured
         fmp = None
-        if settings.fmp_api_key:
+        if settings.fmp_api_key and settings.fmp_api_key not in ("", "SET_ME", "your_fmp_api_key_here"):
             fmp = FMPClient(
                 api_key=settings.fmp_api_key,
                 base_url=settings.fmp_base_url,
