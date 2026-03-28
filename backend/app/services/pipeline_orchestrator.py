@@ -10,7 +10,7 @@ from time import monotonic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.clients.fmp_client import FMPClient
+from app.clients.aggregator import HoldingsAggregator
 from app.models import Fund, PipelineRun
 from app.services.benchmark_service import BenchmarkService
 from app.services.deviation_service import DeviationService
@@ -31,10 +31,10 @@ class PipelineOrchestrator:
     def __init__(
         self,
         db_factory: async_sessionmaker[AsyncSession],
-        fmp: FMPClient,
+        aggregator: HoldingsAggregator,
     ) -> None:
         self._db_factory = db_factory
-        self._fmp = fmp
+        self._aggregator = aggregator
 
     async def run_daily_pipeline(
         self,
@@ -134,7 +134,7 @@ class PipelineOrchestrator:
                 logger.warning("No active funds found, nothing to process")
             else:
                 async with self._db_factory() as db:
-                    holdings_svc = HoldingsService(db, self._fmp, normalizer)
+                    holdings_svc = HoldingsService(db, self._aggregator, normalizer)
                     batch_result = await holdings_svc.fetch_and_store_batch(
                         funds_list, target_date,
                     )
@@ -158,7 +158,7 @@ class PipelineOrchestrator:
 
             try:
                 async with self._db_factory() as db:
-                    benchmark_svc = BenchmarkService(db, self._fmp, normalizer)
+                    benchmark_svc = BenchmarkService(db, self._aggregator, normalizer)
                     benchmark_counts = await benchmark_svc.fetch_all_benchmarks(target_date)
 
                 logger.info("Benchmark results: %s", benchmark_counts)
@@ -235,7 +235,7 @@ class PipelineOrchestrator:
             run.funds_failed = funds_failed
             run.holdings_rows_inserted = holdings_total
             run.deviations_rows_inserted = deviations_total
-            run.api_calls_made = self._fmp.api_calls_made
+            run.api_calls_made = self._aggregator.api_calls_made
             run.duration_seconds = duration
             run.error_log = error_log if error_log else None
             run.skipped_tickers = skipped_tickers if skipped_tickers else None
@@ -247,7 +247,7 @@ class PipelineOrchestrator:
             "duration=%.2fs, api_calls=%d",
             run.id, status, funds_succeeded, funds_attempted,
             holdings_total, deviations_total, float(duration),
-            self._fmp.api_calls_made,
+            self._aggregator.api_calls_made,
         )
         return run
 

@@ -27,25 +27,24 @@ async def _run_daily_pipeline() -> None:
 
     This is the job that APScheduler invokes on the configured cron schedule.
     It imports the pipeline orchestrator at call time to avoid circular imports
-    and to ensure all app-level singletons (DB engine, FMP client) are ready.
+    and to ensure all app-level singletons (DB engine, aggregator) are ready.
     """
     logger.info("Scheduled daily pipeline run starting")
     try:
         # Import at runtime to avoid circular deps and ensure app is initialized
-        from app.dependencies import get_fmp_client
         from app.database import SessionLocal
+        from app.dependencies import get_aggregator
+        from app.services.pipeline_orchestrator import PipelineOrchestrator
 
-        fmp_client = get_fmp_client()
+        aggregator = get_aggregator()
 
-        async with SessionLocal() as db:
-            # The pipeline service will be implemented by the services agent.
-            # For now, log that the trigger fired so we can verify scheduling.
-            logger.info(
-                "Daily pipeline triggered. FMP client ready=%s. "
-                "Pipeline service execution will be wired here.",
-                fmp_client is not None,
-            )
-            # TODO: wire to PipelineService.run_daily(db, fmp_client)
+        logger.info(
+            "Daily pipeline triggered. Aggregator ready=%s.",
+            aggregator is not None,
+        )
+
+        orchestrator = PipelineOrchestrator(SessionLocal, aggregator)
+        await orchestrator.run_daily_pipeline(trigger_type="scheduled")
 
     except Exception:
         logger.exception("Daily pipeline run failed with unhandled exception")

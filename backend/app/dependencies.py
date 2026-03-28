@@ -7,12 +7,16 @@ from collections.abc import AsyncGenerator
 from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.aggregator import HoldingsAggregator
 from app.clients.fmp_client import FMPClient
 from app.config import settings
 from app.database import SessionLocal
 
-# Singleton FMP client instance (created on first use)
+# Singleton FMP client instance (kept for backwards compatibility)
 _fmp_client: FMPClient | None = None
+
+# Singleton aggregator instance (primary entry point for holdings data)
+_aggregator: HoldingsAggregator | None = None
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -21,11 +25,41 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def get_aggregator() -> HoldingsAggregator:
+    """Get the singleton holdings aggregator instance.
+
+    The aggregator routes requests to free provider-specific clients first,
+    falling back to FMP if an API key is configured.
+    It must be closed on application shutdown via the lifespan handler.
+    """
+    global _aggregator  # noqa: PLW0603
+    if _aggregator is None:
+        # Only create FMP client if API key is configured
+        fmp = None
+        if settings.fmp_api_key:
+            fmp = FMPClient(
+                api_key=settings.fmp_api_key,
+                base_url=settings.fmp_base_url,
+                max_concurrent=settings.fmp_max_concurrent,
+                requests_per_minute=settings.fmp_requests_per_minute,
+            )
+        _aggregator = HoldingsAggregator(fmp_client=fmp)
+    return _aggregator
+
+
+async def shutdown_aggregator() -> None:
+    """Close the aggregator and all provider clients on application shutdown."""
+    global _aggregator  # noqa: PLW0603
+    if _aggregator is not None:
+        await _aggregator.close()
+        _aggregator = None
+
+
 def get_fmp_client() -> FMPClient:
     """Get the singleton FMP client instance.
 
-    The client is created once and reused across requests.
-    It must be closed on application shutdown via the lifespan handler.
+    DEPRECATED: Use get_aggregator() instead. Kept for backwards compatibility
+    with code that needs direct FMP access (e.g. ETF list, stock prices).
     """
     global _fmp_client  # noqa: PLW0603
     if _fmp_client is None:
@@ -39,7 +73,10 @@ def get_fmp_client() -> FMPClient:
 
 
 async def shutdown_fmp_client() -> None:
-    """Close the FMP client on application shutdown."""
+    """Close the FMP client on application shutdown.
+
+    DEPRECATED: Use shutdown_aggregator() instead.
+    """
     global _fmp_client  # noqa: PLW0603
     if _fmp_client is not None:
         await _fmp_client.close()

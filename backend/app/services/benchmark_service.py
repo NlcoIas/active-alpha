@@ -1,4 +1,4 @@
-"""Service for fetching and storing benchmark (index ETF) holdings."""
+"""Service for fetching and storing benchmark (index ETF) holdings via multi-source aggregator."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.fmp_client import FMPClient, FMPClientError
+from app.clients.aggregator import HoldingsAggregator
 from app.database import engine
 from app.models import Benchmark
 from app.utils.bulk_ops import bulk_upsert_benchmark_holdings
@@ -18,16 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 class BenchmarkService:
-    """Fetches benchmark ETF holdings from FMP, normalizes, and stores them."""
+    """Fetches benchmark ETF holdings via aggregator, normalizes, and stores them."""
 
     def __init__(
         self,
         db: AsyncSession,
-        fmp: FMPClient,
+        aggregator: HoldingsAggregator,
         normalizer: TickerNormalizer,
     ) -> None:
         self._db = db
-        self._fmp = fmp
+        self._aggregator = aggregator
         self._normalizer = normalizer
 
     async def fetch_and_store_benchmark_holdings(
@@ -45,16 +45,17 @@ class BenchmarkService:
             benchmark_ticker, benchmark_id, target_date,
         )
 
-        raw_holdings = await self._fmp.get_etf_holdings(benchmark_ticker, target_date)
+        raw_holdings = await self._aggregator.fetch_holdings(benchmark_ticker, target_date)
 
         if not raw_holdings:
             logger.warning(
-                "No holdings returned from FMP for benchmark %s on %s",
+                "No holdings returned for benchmark %s on %s",
                 benchmark_ticker, target_date,
             )
             return 0
 
         fetched_at = datetime.now(timezone.utc)
+        source = self._aggregator.get_provider_name(benchmark_ticker).lower()
         normalized_rows: list[dict] = []
 
         for holding in raw_holdings:
@@ -90,7 +91,7 @@ class BenchmarkService:
                 "ticker": normalized_ticker,
                 "name": holding.get("name"),
                 "weight_pct": weight_val,
-                "source": "fmp",
+                "source": source,
                 "fetched_at": fetched_at,
             })
 
@@ -148,11 +149,6 @@ class BenchmarkService:
                     benchmark.id, benchmark.ticker, target_date,
                 )
                 counts[benchmark.ticker] = count
-            except FMPClientError as exc:
-                logger.error(
-                    "Failed to fetch benchmark %s: %s", benchmark.ticker, exc
-                )
-                raise  # Benchmark failures are critical; propagate up
             except Exception as exc:
                 logger.exception(
                     "Unexpected error fetching benchmark %s", benchmark.ticker

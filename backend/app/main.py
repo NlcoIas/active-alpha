@@ -2,7 +2,7 @@
 
 Creates the app with:
 - CORS middleware
-- Lifespan handler (FMP client init/teardown, optional scheduler)
+- Lifespan handler (holdings aggregator init/teardown, optional scheduler)
 - Global exception handler returning ErrorResponse format
 - All routers registered under /api/v1 (except health probes)
 """
@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.dependencies import get_fmp_client, shutdown_fmp_client
+from app.dependencies import get_aggregator, shutdown_aggregator
 from app.routers.benchmarks import router as benchmarks_router
 from app.routers.deviations import router as deviations_router
 from app.routers.funds import router as funds_router
@@ -39,18 +39,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle resources.
 
     Startup:
-      - Initialise the singleton FMP client
+      - Initialise the singleton holdings aggregator (free providers + optional FMP)
       - Start the APScheduler (only outside of test environments)
 
     Shutdown:
       - Stop the scheduler gracefully
-      - Close the FMP client HTTP connection pool
+      - Close the aggregator and all provider clients
     """
     # --- Startup ---
     logger.info("Active Alpha API starting up (env=%s)", settings.environment)
 
-    # Eagerly create the FMP client so it is ready for requests
-    get_fmp_client()
+    # Eagerly create the aggregator so all providers are ready for requests
+    get_aggregator()
 
     # Start scheduler in non-test environments
     if settings.environment != "test":
@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.exception("Error stopping scheduler")
 
-    await shutdown_fmp_client()
+    await shutdown_aggregator()
 
     logger.info("Shutdown complete")
 

@@ -1,4 +1,4 @@
-"""Service for fetching and storing ETF holdings from FMP."""
+"""Service for fetching and storing ETF holdings via multi-source aggregator."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.fmp_client import FMPClient, FMPClientError
+from app.clients.aggregator import HoldingsAggregator
 from app.database import engine
 from app.utils.bulk_ops import bulk_upsert_holdings
 from app.utils.ticker_normalizer import TickerNormalizer
@@ -27,16 +27,16 @@ class BatchResult:
 
 
 class HoldingsService:
-    """Fetches ETF holdings from FMP, normalizes, validates, and stores them."""
+    """Fetches ETF holdings via aggregator, normalizes, validates, and stores them."""
 
     def __init__(
         self,
         db: AsyncSession,
-        fmp: FMPClient,
+        aggregator: HoldingsAggregator,
         normalizer: TickerNormalizer,
     ) -> None:
         self._db = db
-        self._fmp = fmp
+        self._aggregator = aggregator
         self._normalizer = normalizer
         self._validator = HoldingsValidator()
 
@@ -49,22 +49,22 @@ class HoldingsService:
         """Fetch holdings for a single fund, normalize, validate, and store.
 
         Returns the count of holdings stored.
-        Raises FMPClientError on API failure, ValueError on validation failure.
         """
         logger.info(
             "Fetching holdings for %s (fund_id=%s) on %s",
             fund_ticker, fund_id, target_date,
         )
 
-        # Fetch raw holdings from FMP
-        raw_holdings = await self._fmp.get_etf_holdings(fund_ticker, target_date)
+        # Fetch raw holdings from the best available provider
+        raw_holdings = await self._aggregator.fetch_holdings(fund_ticker, target_date)
 
         if not raw_holdings:
-            logger.warning("No holdings returned from FMP for %s on %s", fund_ticker, target_date)
+            logger.warning("No holdings returned for %s on %s", fund_ticker, target_date)
             return 0
 
         # Normalize tickers and filter non-equity positions
         fetched_at = datetime.now(timezone.utc)
+        source = self._aggregator.get_provider_name(fund_ticker).lower()
         normalized_rows: list[dict] = []
 
         for holding in raw_holdings:
@@ -103,7 +103,7 @@ class HoldingsService:
                 "shares": _safe_float(holding.get("shares")),
                 "market_value": _safe_float(holding.get("market_value")),
                 "is_stale": False,
-                "source": "fmp",
+                "source": source,
                 "fetched_at": fetched_at,
             })
 
@@ -175,17 +175,11 @@ class HoldingsService:
                     )
                     result.funds_processed += 1
                     result.total_holdings += count
-                except FMPClientError as exc:
-                    result.funds_failed += 1
-                    result.errors[fund_ticker] = f"FMP error: {exc}"
-                    logger.error(
-                        "Failed to fetch holdings for %s: %s", fund_ticker, exc
-                    )
                 except Exception as exc:
                     result.funds_failed += 1
-                    result.errors[fund_ticker] = f"Unexpected error: {exc}"
+                    result.errors[fund_ticker] = f"Provider error: {exc}"
                     logger.exception(
-                        "Unexpected error fetching holdings for %s", fund_ticker
+                        "Failed to fetch holdings for %s: %s", fund_ticker, exc
                     )
 
         # Launch all tasks with semaphore-controlled concurrency
