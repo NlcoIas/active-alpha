@@ -25,10 +25,22 @@ const securityHeaders = [
   },
 ];
 
+const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
+
 const nextConfig: NextConfig = {
   output: "standalone",
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
+  },
+  async rewrites() {
+    return [
+      { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },
+      { source: "/health", destination: `${BACKEND_URL}/health` },
+      { source: "/ready", destination: `${BACKEND_URL}/ready` },
+      { source: "/docs", destination: `${BACKEND_URL}/docs` },
+      { source: "/openapi.json", destination: `${BACKEND_URL}/openapi.json` },
+      { source: "/redoc", destination: `${BACKEND_URL}/redoc` },
+    ];
   },
 };
 
