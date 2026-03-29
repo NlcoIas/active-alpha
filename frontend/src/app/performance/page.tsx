@@ -43,8 +43,7 @@ export default async function PerformancePage() {
   let error: string | null = null;
 
   try {
-    const data = await api.getPrecomputedStrategies();
-    strategies = data.strategies;
+    strategies = await api.getPrecomputedStrategies();
   } catch (err) {
     error =
       err instanceof Error ? err.message : "Failed to load strategies";

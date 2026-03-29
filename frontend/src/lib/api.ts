@@ -221,7 +221,5 @@ export const api = {
     }),
 
   getPrecomputedStrategies: () =>
-    apiFetch<{ strategies: BacktestResult[] }>(
-      "/api/v1/backtests/precomputed"
-    ),
+    apiFetch<BacktestResult[]>("/api/v1/backtests/precomputed"),
 };
