@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+import secrets
+
 from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,7 +98,7 @@ async def require_api_key(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin API key is not configured on the server.",
         )
-    if x_api_key != settings.admin_api_key:
+    if not secrets.compare_digest(x_api_key, settings.admin_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key.",

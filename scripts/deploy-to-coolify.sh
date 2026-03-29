@@ -69,14 +69,15 @@ api_patch "/applications/$APP_UUID" '{
 }' > /dev/null 2>&1 || true
 echo "  Done."
 
-# ─── Step 2: Update domain routing to backend service on port 8000 ──────────
+# ─── Step 2: Update domain routing to nginx on port 80 ───────────────────────
 echo ""
-echo "→ Step 2: Set docker_compose_domains → backend:8000..."
+echo "→ Step 2: Set docker_compose_domains → nginx:80..."
 api_patch "/applications/$APP_UUID" '{
-  "docker_compose_domains": {"backend": {"domain": "http://alpha.nicolasschaerer.ch"}},
-  "ports_exposes": "8000"
+  "docker_compose_domains": {"nginx": {"domain": "http://alpha.nicolasschaerer.ch"}},
+  "ports_exposes": "80"
 }' > /dev/null 2>&1 || true
-echo "  Domain: http://alpha.nicolasschaerer.ch → backend:8000"
+echo "  Domain: http://alpha.nicolasschaerer.ch → nginx:80"
+echo "  nginx routes: /api/* → backend:8000, /* → frontend:3000"
 echo "  (Cloudflare Tunnel handles HTTPS)"
 
 # ─── Step 3: Set environment variables ───────────────────────────────────────

@@ -19,7 +19,9 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.dependencies import get_aggregator, shutdown_aggregator
+from app.routers.backtests import router as backtests_router
 from app.routers.benchmarks import router as benchmarks_router
+from app.routers.dashboard import router as dashboard_router
 from app.routers.deviations import router as deviations_router
 from app.routers.funds import router as funds_router
 from app.routers.health import router as health_router
@@ -85,11 +87,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
+    is_prod = settings.environment == "production"
     app = FastAPI(
         title=settings.app_name,
         description="Active ETF Deviation Tracker & Backtesting Platform",
         version=settings.app_version,
         lifespan=lifespan,
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
     )
 
     # --- Middleware ---
@@ -139,6 +145,8 @@ def create_app() -> FastAPI:
     app.include_router(holdings_router, prefix="/api/v1", tags=["holdings"])
     app.include_router(deviations_router, prefix="/api/v1", tags=["deviations"])
     app.include_router(benchmarks_router, prefix="/api/v1/benchmarks", tags=["benchmarks"])
+    app.include_router(backtests_router, prefix="/api/v1/backtests", tags=["backtests"])
+    app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
     app.include_router(pipeline_router, prefix="/api/v1/pipeline", tags=["pipeline"])
 
     return app

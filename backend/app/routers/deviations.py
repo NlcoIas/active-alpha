@@ -6,7 +6,7 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -15,6 +15,8 @@ from app.models.deviation import Deviation
 from app.models.fund import Fund
 from app.schemas.common import CursorPagination
 from app.schemas.deviation import (
+    ConsensusOverweightRecord,
+    ConsensusOverweightsResponse,
     DeviationHistoryRecord,
     DeviationHistoryResponse,
     DeviationRecord,
@@ -26,6 +28,83 @@ from app.schemas.deviation import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["deviations"])
+
+
+# ---------------------------------------------------------------------------
+# Consensus overweights (literal route BEFORE parameterized routes)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/deviations/consensus", response_model=ConsensusOverweightsResponse)
+async def get_consensus_overweights(
+    min_funds: int = Query(3, ge=2, le=50, description="Minimum number of funds overweighting a stock"),
+    date: date | None = Query(None, description="Snapshot date (YYYY-MM-DD). Defaults to latest."),
+    limit: int = Query(50, ge=1, le=200, description="Maximum records to return"),
+    db: AsyncSession = Depends(get_db),
+) -> ConsensusOverweightsResponse:
+    """Get consensus overweights: stocks overweighted by min_funds+ funds.
+
+    Returns stocks held by at least `min_funds` funds with average deviation,
+    sorted by fund count (descending), then average deviation (descending).
+    """
+    # Determine snapshot date
+    snapshot_date = date
+    if snapshot_date is None:
+        latest_query = select(func.max(Deviation.snapshot_date))
+        latest_result = await db.execute(latest_query)
+        snapshot_date = latest_result.scalar_one_or_none()
+
+    if snapshot_date is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No deviation data available.",
+        )
+
+    consensus_query = text("""
+        SELECT
+            d.ticker,
+            COUNT(DISTINCT f.id) AS fund_count,
+            AVG(d.deviation_pct) AS avg_deviation_pct,
+            MAX(d.deviation_pct) AS max_deviation_pct,
+            MIN(d.deviation_pct) AS min_deviation_pct,
+            ARRAY_AGG(DISTINCT f.ticker ORDER BY f.ticker) AS fund_tickers
+        FROM deviations d
+        JOIN funds f ON d.fund_id = f.id
+        WHERE d.snapshot_date = :snapshot_date
+          AND d.direction = 'overweight'
+        GROUP BY d.ticker
+        HAVING COUNT(DISTINCT f.id) >= :min_funds
+        ORDER BY COUNT(DISTINCT f.id) DESC, AVG(d.deviation_pct) DESC
+        LIMIT :limit
+    """)
+
+    result = await db.execute(
+        consensus_query,
+        {
+            "snapshot_date": snapshot_date,
+            "min_funds": min_funds,
+            "limit": limit,
+        },
+    )
+    rows = result.fetchall()
+
+    data = [
+        ConsensusOverweightRecord(
+            ticker=row.ticker,
+            fund_count=row.fund_count,
+            avg_deviation_pct=round(float(row.avg_deviation_pct), 5),
+            max_deviation_pct=round(float(row.max_deviation_pct), 5),
+            min_deviation_pct=round(float(row.min_deviation_pct), 5),
+            fund_tickers=list(row.fund_tickers),
+        )
+        for row in rows
+    ]
+
+    return ConsensusOverweightsResponse(
+        snapshot_date=snapshot_date,
+        min_funds=min_funds,
+        data=data,
+    )
 
 
 # ---------------------------------------------------------------------------

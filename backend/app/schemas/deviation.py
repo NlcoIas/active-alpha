@@ -66,3 +66,22 @@ class StockHoldersResponse(BaseModel):
     snapshot_date: date
     data: list[StockHolderRecord]
     pagination: CursorPagination
+
+
+class ConsensusOverweightRecord(BaseModel):
+    """A stock overweighted by multiple funds (consensus pick)."""
+
+    ticker: str
+    fund_count: int
+    avg_deviation_pct: float
+    max_deviation_pct: float
+    min_deviation_pct: float
+    fund_tickers: list[str]
+
+
+class ConsensusOverweightsResponse(BaseModel):
+    """Consensus overweights: stocks overweighted by min_funds+ funds."""
+
+    snapshot_date: date
+    min_funds: int
+    data: list[ConsensusOverweightRecord]
