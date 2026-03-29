@@ -8,6 +8,10 @@ RUN npm ci
 
 COPY . .
 
+# Set backend URL for Next.js rewrites (baked at build time)
+ARG BACKEND_URL=http://api:8000
+ENV BACKEND_URL=${BACKEND_URL}
+
 # Build the Next.js app (standalone output)
 RUN npm run build
 
